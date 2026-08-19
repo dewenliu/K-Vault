@@ -238,8 +238,11 @@ export function buildTelegramDirectLink(env, directId, fallbackOrigin = "") {
   const publicBase = normalizeBaseUrl(env?.PUBLIC_BASE_URL);
   const fallbackBase = normalizeBaseUrl(fallbackOrigin);
   const base = publicBase || fallbackBase;
-  if (!base) return `/file/${directId}`;
-  return `${base}/file/${directId}`;
+  // 中文/特殊字符文件名必须百分号编码，否则 Telegram 客户端链接化后
+  // 与 KV key 对不上，导致直链 404（与 buildPublicFileSrc 保持一致）。
+  const encodedId = encodeURIComponent(String(directId || ""));
+  if (!base) return `/file/${encodedId}`;
+  return `${base}/file/${encodedId}`;
 }
 
 export function buildTelegramUploadNoticeText({
