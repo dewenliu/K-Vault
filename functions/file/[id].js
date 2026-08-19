@@ -78,7 +78,31 @@ export async function onRequest(context) {
       return handleSignedTelegramFile(context, signedTelegramMeta);
     }
 
-    const recordResult = await getRecordWithKey(env, fileId);
+    // Cloudflare Pages 的 [id] 路径参数保留 URL 编码（如 %E7%85%A7...），
+    // 而 KV key 是原始文件名（中文原样）。逐级解码直到命中 KV，兼容
+    // 一层或两层编码（Telegram 客户端有时会对 % 再编码一次成 %25）。
+    const idCandidates = [fileId];
+    let decodedFileId = fileId;
+    for (let i = 0; i < 2; i += 1) {
+      try {
+        const next = decodeURIComponent(decodedFileId);
+        if (next === decodedFileId) break;
+        decodedFileId = next;
+        idCandidates.push(decodedFileId);
+      } catch {
+        break;
+      }
+    }
+
+    let recordResult = { record: null, kvKey: fileId };
+    for (const candidate of idCandidates) {
+      const attempt = await getRecordWithKey(env, candidate);
+      if (attempt?.record?.metadata) {
+        recordResult = attempt;
+        fileId = candidate;
+        break;
+      }
+    }
     const record = recordResult?.record;
     const kvKey = recordResult?.kvKey || fileId;
 
