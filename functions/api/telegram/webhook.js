@@ -6,6 +6,7 @@ import {
   shouldUseSignedTelegramLinks,
   shouldWriteTelegramMetadata,
 } from '../../utils/telegram.js';
+import { buildPublicFileId } from '../../utils/public-id.js';
 
 export async function onRequestGet(context) {
   const { request } = context;
@@ -50,6 +51,11 @@ export async function onRequestPost(context) {
   }
 
   const useSigned = shouldUseSignedTelegramLinks(env);
+  const publicId = await buildPublicFileId({
+    env,
+    fileName: media.fileName,
+    fileExtension: media.fileExtension,
+  });
   const directId = useSigned
     ? await createSignedTelegramFileId(
         {
@@ -62,10 +68,10 @@ export async function onRequestPost(context) {
         },
         env
       )
-    : `${media.fileId}.${media.fileExtension}`;
+    : publicId;
 
   if (env.img_url && shouldWriteTelegramMetadata(env)) {
-    await env.img_url.put(`${media.fileId}.${media.fileExtension}`, '', {
+    await env.img_url.put(publicId, '', {
       metadata: {
         TimeStamp: Date.now(),
         ListType: 'None',

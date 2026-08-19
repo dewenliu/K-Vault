@@ -182,7 +182,8 @@ export async function onRequestPost(context) {
         return jsonResponse({ error: result.error }, 500);
       }
 
-      metadataKey = `${result.fileId}.${fileExtension}`;
+      const publicId = await buildPublicFileId({ env, fileName: taskData.fileName, fileExtension });
+      metadataKey = publicId;
       taskData.telegramMessageId = result.messageId || taskData.telegramMessageId;
 
       responseFileKey = await buildTelegramDirectId(
@@ -192,7 +193,8 @@ export async function onRequestPost(context) {
         taskData.fileType,
         taskData.fileSize,
         taskData.telegramMessageId,
-        env
+        env,
+        publicId
       );
       extraMetadata.signedLink = shouldUseSignedTelegramLinks(env);
       extraMetadata.telegramFileId = result.fileId;
@@ -459,10 +461,11 @@ async function buildTelegramDirectId(
   mimeType,
   fileSize,
   messageId,
-  env
+  env,
+  publicId
 ) {
   if (!shouldUseSignedTelegramLinks(env)) {
-    return `${fileId}.${fileExtension}`;
+    return publicId || `${fileId}.${fileExtension}`;
   }
   return await createSignedTelegramFileId(
     {

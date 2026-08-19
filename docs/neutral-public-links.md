@@ -29,11 +29,15 @@ https://域名/file/<原文件名>.<后缀>
    - `buildPublicFileSrc()`：组装 `/file/<encoded id>` 直链。
    - `resolvePublicLinkMode()`：读取可选环境变量 `PUBLIC_LINK_MODE`。
 
-2. **4 个上传入口全部去掉存储前缀**（KV key = 公开 ID = 原文件名.后缀，存储实际 key 只写入 metadata）：
+2. **所有上传入口去掉存储前缀**（KV key = 公开 ID = 原文件名.后缀，存储实际 key 只写入 metadata），**包括 Telegram 分支**：
    - `functions/upload.js`（普通上传，7 种存储）
    - `functions/api/upload-from-url.js`（URL 上传，7 种存储）
    - `functions/api/chunked-upload/complete.js`（分片上传完成）
    - `functions/api/r2/upload.js`（独立 R2 上传 API）
+   - `functions/api/telegram/webhook.js`（Telegram Webhook 回链，Cloudflare 侧）
+   - `server/app.js` 的 Telegram Webhook 回链（Docker 侧）
+
+   > Telegram 分支此前直接以 file_id 作为公开 ID（链接形如 `/file/BQACAgU…png`，`BQAC` 前缀是 Telegram file_id 指纹）。现统一为原文件名，file_id 只存 `metadata.telegramFileId`；签名直链模式（`tgs_` 前缀）保持不变。
 
 3. **读取/管理链路保持兼容**（无需改数据即可继续访问旧链接）：
    - `functions/file/[id].js`：候选 key 探测（精确 key 优先，兼容 `img:` / `vid:` / `hf:` 等旧前缀）；Telegram 改为从 `metadata.telegramFileId` 读取，不再靠拆分 key 猜。
@@ -50,7 +54,8 @@ https://域名/file/<原文件名>.<后缀>
 | --- | --- | --- |
 | HuggingFace | `/file/hf:hf_1787070238817_8wvnxv.webp` | `/file/照片.webp` |
 | Discord | `/file/discord:discord_1787070028324_zamr8l.webp` | `/file/照片.webp` |
-| R2 / S3 / WebDAV / GitHub / Telegram | `/file/r2:...` 等带前缀 | `/file/照片.webp` |
+| R2 / S3 / WebDAV / GitHub | `/file/r2:...` 等带前缀 | `/file/照片.webp` |
+| Telegram | `/file/BQACAgUAAyEG…png`（file_id，带指纹） | `/file/照片.webp`（file_id 只在 metadata） |
 
 ## 重名策略
 

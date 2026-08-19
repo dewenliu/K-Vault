@@ -261,6 +261,8 @@ async function uploadToTelegramStorage(
     throw new Error("Telegram 已接收文件，但未返回可用的文件 ID。");
   }
 
+  const publicId = await buildPublicFileId({ env, fileName, fileExtension });
+
   const directId = await buildTelegramDirectId(
     fileId,
     fileExtension,
@@ -268,11 +270,12 @@ async function uploadToTelegramStorage(
     uploadFile.type,
     uploadFile.size,
     messageId,
-    env
+    env,
+    publicId
   );
 
   if (env.img_url && shouldWriteTelegramMetadata(env)) {
-    await env.img_url.put(`${fileId}.${fileExtension}`, "", {
+    await env.img_url.put(publicId, "", {
       metadata: appendCommonMetadata(
         {
           TimeStamp: Date.now(),
@@ -315,7 +318,7 @@ async function uploadToTelegramStorage(
     console.warn("Telegram upload notice error:", error.message);
   }
 
-  return new Response(JSON.stringify([{ src: `/file/${directId}` }]), {
+  return new Response(JSON.stringify([{ src: buildPublicFileSrc(directId) }]), {
     status: 200,
     headers: { "Content-Type": "application/json" },
   });
@@ -649,10 +652,11 @@ async function buildTelegramDirectId(
   mimeType,
   fileSize,
   messageId,
-  env
+  env,
+  publicId
 ) {
   if (!shouldUseSignedTelegramLinks(env)) {
-    return `${fileId}.${fileExtension}`;
+    return publicId || `${fileId}.${fileExtension}`;
   }
   return createSignedTelegramFileId(
     {

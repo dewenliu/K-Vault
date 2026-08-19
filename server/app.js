@@ -5,6 +5,7 @@ const { Hono } = require('hono');
 const { cors } = require('hono/cors');
 const { createContainer } = require('./lib/container');
 const { normalizeFolderPath } = require('./lib/repos/file-repo');
+const { buildPublicFileId } = require('./lib/storage/common');
 const {
   getApiTokenScopes,
   normalizeExpiresAt,
@@ -2797,6 +2798,20 @@ function createApp() {
     }
 
     const useSigned = shouldUseSignedTelegramLinks(env);
+
+    // 中性公开 ID（= 原文件名），file_id 只存数据库，不出现在链接中
+    let fileRepoForId = null;
+    try {
+      fileRepoForId = shouldWriteTelegramMetadata(env) ? getServices(c).fileRepo : null;
+    } catch {
+      fileRepoForId = null;
+    }
+    const publicId = await buildPublicFileId({
+      fileName: media.fileName,
+      mimeType: media.mimeType,
+      isTaken: fileRepoForId ? (candidate) => Boolean(fileRepoForId.getById(candidate)) : undefined,
+    });
+
     const directId = useSigned
       ? createSignedTelegramFileId(
           {
@@ -2809,13 +2824,12 @@ function createApp() {
           },
           env
         )
-      : `${media.fileId}.${media.fileExtension}`;
+      : publicId;
 
     // Store file metadata in SQLite if enabled
     if (shouldWriteTelegramMetadata(env)) {
       try {
         const { fileRepo } = getServices(c);
-        const publicId = `${media.fileId}.${media.fileExtension}`;
         const existing = fileRepo.getById(publicId);
         if (!existing) {
           fileRepo.create({
