@@ -1,9 +1,15 @@
 import sentryPlugin from "@cloudflare/pages-plugin-sentry";
 import '@sentry/tracing';
 
+// 遥测（Sentry 错误上报与链路追踪）默认【关闭】。
+// 如需开启，请在 Cloudflare Pages 环境变量中设置 `enable_telemetry` 为真值（如 "true"）。
+export function telemetryEnabled(env) {
+  return !!(env && env.enable_telemetry && env.enable_telemetry !== "false");
+}
+
 export async function errorHandling(context) {
   const env = context.env;
-  if (typeof env.disable_telemetry == "undefined" || env.disable_telemetry == null || env.disable_telemetry == "") {
+  if (telemetryEnabled(env)) {
     context.data.telemetry = true;
     let remoteSampleRate = 0.001;
     try {
@@ -26,7 +32,7 @@ export async function errorHandling(context) {
 
 export function telemetryData(context) {
   const env = context.env;
-  if (typeof env.disable_telemetry == "undefined" || env.disable_telemetry == null || env.disable_telemetry == "") {
+  if (telemetryEnabled(env)) {
     try {
       const parsedHeaders = {};
       context.request.headers.forEach((value, key) => {
@@ -70,7 +76,9 @@ export function telemetryData(context) {
     } catch (e) {
       console.log(e);
     } finally {
-      context.data.transaction.finish();
+      if (context.data && context.data.transaction) {
+        context.data.transaction.finish();
+      }
     }
   }
   return context.next();

@@ -18,6 +18,7 @@ import {
   shouldUseSignedTelegramLinks,
   shouldWriteTelegramMetadata,
 } from '../../utils/telegram.js';
+import { buildPublicFileId, buildPublicFileSrc } from '../../utils/public-id.js';
 
 const TEMP_CHUNK_PREFIX = 'chunk-upload';
 const MB = 1024 * 1024;
@@ -98,8 +99,7 @@ export async function onRequestPost(context) {
         return jsonResponse({ error: 'R2 未配置，无法完成上传' }, 500);
       }
       const uploadResult = await uploadToR2(file, fileExtension, env);
-      responseFileKey = uploadResult.fileKey;
-      metadataKey = uploadResult.fileKey;
+      extraMetadata.r2Key = uploadResult.objectKey;
     } else if (storageType === 's3') {
       if (!env.S3_ENDPOINT || !env.S3_ACCESS_KEY_ID) {
         return jsonResponse({ error: 'S3 未配置，无法完成上传' }, 500);
@@ -112,8 +112,6 @@ export async function onRequestPost(context) {
         contentType: file.type || 'application/octet-stream',
         metadata: { 'x-amz-meta-filename': taskData.fileName },
       });
-      responseFileKey = `s3:${s3Key}`;
-      metadataKey = responseFileKey;
       extraMetadata.s3Key = s3Key;
     } else if (storageType === 'discord') {
       if (!env.DISCORD_WEBHOOK_URL && !env.DISCORD_BOT_TOKEN) {
@@ -125,8 +123,6 @@ export async function onRequestPost(context) {
         return jsonResponse({ error: 'Discord 上传失败: ' + discordResult.error }, 500);
       }
       const discordId = `discord_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-      responseFileKey = `discord:${discordId}.${fileExtension}`;
-      metadataKey = responseFileKey;
       extraMetadata.discordChannelId = discordResult.channelId;
       extraMetadata.discordMessageId = discordResult.messageId;
       extraMetadata.discordAttachmentId = discordResult.attachmentId;
@@ -143,8 +139,6 @@ export async function onRequestPost(context) {
       if (!hfResult.success) {
         return jsonResponse({ error: 'HuggingFace 上传失败: ' + hfResult.error }, 500);
       }
-      responseFileKey = `hf:${hfId}.${fileExtension}`;
-      metadataKey = responseFileKey;
       extraMetadata.hfPath = hfPath;
     } else if (storageType === 'webdav') {
       if (!hasWebDAVConfig(env)) {
@@ -152,16 +146,14 @@ export async function onRequestPost(context) {
       }
       const arrayBuffer = await file.arrayBuffer();
       const wdId = `wd_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-      const publicId = `${wdId}.${fileExtension}`;
-      const webdavPath = joinStoragePath(folderPath, publicId);
+      const internalId = `${wdId}.${fileExtension}`;
+      const webdavPath = joinStoragePath(folderPath, internalId);
       const webdavResult = await uploadToWebDAV(
         arrayBuffer,
         webdavPath,
         file.type || 'application/octet-stream',
         env
       );
-      responseFileKey = `webdav:${publicId}`;
-      metadataKey = responseFileKey;
       extraMetadata.webdavPath = normalizeWebDAVPath(webdavResult.path || webdavPath);
       extraMetadata.webdavEtag = webdavResult.etag || undefined;
     } else if (storageType === 'github') {
@@ -170,8 +162,8 @@ export async function onRequestPost(context) {
       }
       const arrayBuffer = await file.arrayBuffer();
       const ghId = `github_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-      const publicId = `${ghId}.${fileExtension}`;
-      const githubStorageKey = joinStoragePath(folderPath, publicId);
+      const internalId = `${ghId}.${fileExtension}`;
+      const githubStorageKey = joinStoragePath(folderPath, internalId);
       const githubResult = await uploadToGitHub(
         arrayBuffer,
         normalizeGitHubStoragePath(githubStorageKey),
@@ -179,8 +171,6 @@ export async function onRequestPost(context) {
         file.type || 'application/octet-stream',
         env
       );
-      responseFileKey = `github:${publicId}`;
-      metadataKey = responseFileKey;
       extraMetadata.githubStorageKey = normalizeGitHubStoragePath(
         githubResult.storagePath || githubStorageKey
       );
@@ -216,6 +206,14 @@ export async function onRequestPost(context) {
       };
     }
 
+    // 分片上传完成：非 Telegram 存储统一使用中性公开 ID 作为 KV key 与分享链接，
+    // 不再携带任何后端前缀（r2:/s3:/discord:/hf:/webdav:/github:）。
+    if (storageType !== 'telegram') {
+      const publicId = await buildPublicFileId({ env, fileName: taskData.fileName, fileExtension });
+      metadataKey = publicId;
+      responseFileKey = publicId;
+    }
+
     const shouldWriteMetadata =
       storageType === 'telegram' ? shouldWriteTelegramMetadata(env) : true;
 
@@ -232,7 +230,7 @@ export async function onRequestPost(context) {
           totalChunks,
           storageType,
           folderPath: folderPath || undefined,
-          r2Key: storageType === 'r2' ? metadataKey.replace(/^r2:/, '') : undefined,
+          r2Key: extraMetadata.r2Key || undefined,
           telegramMessageId: storageType === 'telegram' ? taskData.telegramMessageId : undefined,
           ...extraMetadata,
         },
@@ -253,7 +251,7 @@ export async function onRequestPost(context) {
 
     return jsonResponse({
       success: true,
-      src: `/file/${responseFileKey}`,
+      src: buildPublicFileSrc(responseFileKey),
       fileName: taskData.fileName,
       fileSize: taskData.fileSize,
     });
@@ -424,7 +422,7 @@ async function uploadToR2(file, fileExtension, env) {
     },
   });
 
-  return { fileKey: `r2:${objectKey}` };
+  return { objectKey };
 }
 
 function getFileExtension(fileName) {

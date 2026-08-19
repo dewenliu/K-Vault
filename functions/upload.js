@@ -16,6 +16,7 @@ import {
   shouldUseSignedTelegramLinks,
   shouldWriteTelegramMetadata,
 } from "./utils/telegram.js";
+import { buildPublicFileId, buildPublicFileSrc } from "./utils/public-id.js";
 
 const MB = 1024 * 1024;
 
@@ -397,8 +398,10 @@ async function uploadToR2(file, fileName, fileExtension, env, folderPath = "") {
       customMetadata: { fileName, uploadTime: Date.now().toString() },
     });
 
+    const publicId = await buildPublicFileId({ env, fileName, fileExtension });
+
     if (env.img_url) {
-      await env.img_url.put(`r2:${objectKey}`, "", {
+      await env.img_url.put(publicId, "", {
         metadata: appendCommonMetadata(
           {
             TimeStamp: Date.now(),
@@ -415,7 +418,7 @@ async function uploadToR2(file, fileName, fileExtension, env, folderPath = "") {
       });
     }
 
-    return new Response(JSON.stringify([{ src: `/file/r2:${objectKey}` }]), {
+    return new Response(JSON.stringify([{ src: buildPublicFileSrc(publicId) }]), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -440,8 +443,10 @@ async function uploadToS3(file, fileName, fileExtension, env, folderPath = "") {
       },
     });
 
+    const publicId = await buildPublicFileId({ env, fileName, fileExtension });
+
     if (env.img_url) {
-      await env.img_url.put(`s3:${objectKey}`, "", {
+      await env.img_url.put(publicId, "", {
         metadata: appendCommonMetadata(
           {
             TimeStamp: Date.now(),
@@ -458,7 +463,7 @@ async function uploadToS3(file, fileName, fileExtension, env, folderPath = "") {
       });
     }
 
-    return new Response(JSON.stringify([{ src: `/file/s3:${objectKey}` }]), {
+    return new Response(JSON.stringify([{ src: buildPublicFileSrc(publicId) }]), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -477,11 +482,10 @@ async function uploadToDiscordStorage(file, fileName, fileExtension, env, folder
       return errorResponse(`Discord upload failed: ${result.error}`);
     }
 
-    const fileId = randomId("discord");
-    const kvKey = `discord:${fileId}.${fileExtension}`;
+    const publicId = await buildPublicFileId({ env, fileName, fileExtension });
 
     if (env.img_url) {
-      await env.img_url.put(kvKey, "", {
+      await env.img_url.put(publicId, "", {
         metadata: appendCommonMetadata(
           {
             TimeStamp: Date.now(),
@@ -502,7 +506,7 @@ async function uploadToDiscordStorage(file, fileName, fileExtension, env, folder
       });
     }
 
-    return new Response(JSON.stringify([{ src: `/file/${kvKey}` }]), {
+    return new Response(JSON.stringify([{ src: buildPublicFileSrc(publicId) }]), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -524,10 +528,10 @@ async function uploadToHFStorage(file, fileName, fileExtension, env, folderPath 
       return errorResponse(`HuggingFace upload failed: ${result.error}`);
     }
 
-    const kvKey = `hf:${fileId}.${fileExtension}`;
+    const publicId = await buildPublicFileId({ env, fileName, fileExtension });
 
     if (env.img_url) {
-      await env.img_url.put(kvKey, "", {
+      await env.img_url.put(publicId, "", {
         metadata: appendCommonMetadata(
           {
             TimeStamp: Date.now(),
@@ -544,7 +548,7 @@ async function uploadToHFStorage(file, fileName, fileExtension, env, folderPath 
       });
     }
 
-    return new Response(JSON.stringify([{ src: `/file/${kvKey}` }]), {
+    return new Response(JSON.stringify([{ src: buildPublicFileSrc(publicId) }]), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -558,14 +562,14 @@ async function uploadToWebDAVStorage(file, fileName, fileExtension, env, folderP
   try {
     const arrayBuffer = await file.arrayBuffer();
     const fileId = randomId("wd");
-    const publicId = `${fileId}.${fileExtension}`;
-    const webdavPath = joinStoragePath(folderPath, publicId);
+    const internalId = `${fileId}.${fileExtension}`;
+    const webdavPath = joinStoragePath(folderPath, internalId);
 
     const result = await uploadToWebDAV(arrayBuffer, webdavPath, file.type || "application/octet-stream", env);
 
-    const kvKey = `webdav:${publicId}`;
+    const publicId = await buildPublicFileId({ env, fileName, fileExtension });
     if (env.img_url) {
-      await env.img_url.put(kvKey, "", {
+      await env.img_url.put(publicId, "", {
         metadata: appendCommonMetadata(
           {
             TimeStamp: Date.now(),
@@ -583,7 +587,7 @@ async function uploadToWebDAVStorage(file, fileName, fileExtension, env, folderP
       });
     }
 
-    return new Response(JSON.stringify([{ src: `/file/${kvKey}` }]), {
+    return new Response(JSON.stringify([{ src: buildPublicFileSrc(publicId) }]), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -597,8 +601,8 @@ async function uploadToGitHubStorage(file, fileName, fileExtension, env, folderP
   try {
     const arrayBuffer = await file.arrayBuffer();
     const fileId = randomId("github");
-    const publicId = `${fileId}.${fileExtension}`;
-    const githubStorageKey = joinStoragePath(folderPath, publicId);
+    const internalId = `${fileId}.${fileExtension}`;
+    const githubStorageKey = joinStoragePath(folderPath, internalId);
 
     const result = await uploadToGitHub(
       arrayBuffer,
@@ -608,9 +612,9 @@ async function uploadToGitHubStorage(file, fileName, fileExtension, env, folderP
       env
     );
 
-    const kvKey = `github:${publicId}`;
+    const publicId = await buildPublicFileId({ env, fileName, fileExtension });
     if (env.img_url) {
-      await env.img_url.put(kvKey, "", {
+      await env.img_url.put(publicId, "", {
         metadata: appendCommonMetadata(
           {
             TimeStamp: Date.now(),
@@ -628,7 +632,7 @@ async function uploadToGitHubStorage(file, fileName, fileExtension, env, folderP
       });
     }
 
-    return new Response(JSON.stringify([{ src: `/file/${kvKey}` }]), {
+    return new Response(JSON.stringify([{ src: buildPublicFileSrc(publicId) }]), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });

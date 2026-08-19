@@ -314,7 +314,7 @@ async function handleTelegramFile(context, fileId, record = null) {
   const fileName = metadata.fileName || fileId;
   const mimeType = getMimeType(fileName);
 
-  const telegramFileId = String(fileId).split('.')[0];
+  const telegramFileId = metadata.telegramFileId || String(fileId).split('.')[0];
   const filePath = await getTelegramFilePath(env, telegramFileId);
   if (!filePath) {
     return errorResponse('Failed to get file path from Telegram', 500);

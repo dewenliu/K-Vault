@@ -18,6 +18,9 @@ describe('UploadService storage key routing', function () {
     };
 
     const fileRepo = {
+      getById() {
+        return null;
+      },
       create(payload) {
         return {
           id: payload.id,
@@ -52,7 +55,15 @@ describe('UploadService storage key routing', function () {
       folderPath: 'album/2026',
     });
 
-    assert.ok(capturedStorageKey.startsWith('uploads/album/2026/huggingface_'));
+    assert.ok(capturedStorageKey.startsWith('uploads/album/2026/'));
     assert.ok(capturedStorageKey.endsWith('.png'));
+    assert.ok(
+      !capturedStorageKey.includes('huggingface_'),
+      'storage key must not leak the backend name'
+    );
+    assert.ok(
+      !capturedStorageKey.includes('hf_'),
+      'storage key must not leak the backend name'
+    );
   });
 });

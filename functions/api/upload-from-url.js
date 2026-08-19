@@ -13,6 +13,7 @@ import {
   shouldUseSignedTelegramLinks,
   shouldWriteTelegramMetadata,
 } from "../utils/telegram.js";
+import { buildPublicFileId, buildPublicFileSrc } from "../utils/public-id.js";
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
 const FETCH_TIMEOUT = 30000;
@@ -402,8 +403,10 @@ async function uploadToR2(arrayBuffer, fileName, fileExtension, contentType, fil
       customMetadata: { fileName, uploadTime: Date.now().toString() },
     });
 
+    const publicId = await buildPublicFileId({ env, fileName, fileExtension });
+
     if (env.img_url) {
-      await env.img_url.put(`r2:${objectKey}`, "", {
+      await env.img_url.put(publicId, "", {
         metadata: appendCommonMetadata(
           {
             TimeStamp: Date.now(),
@@ -420,7 +423,7 @@ async function uploadToR2(arrayBuffer, fileName, fileExtension, contentType, fil
       });
     }
 
-    return jsonResponse([{ src: `/file/r2:${objectKey}` }]);
+    return jsonResponse([{ src: buildPublicFileSrc(publicId) }]);
   } catch (error) {
     console.error("R2 upload error:", error);
     return jsonResponse({ error: `R2 upload failed: ${error.message}` }, 500);
@@ -441,8 +444,10 @@ async function uploadToS3(arrayBuffer, fileName, fileExtension, contentType, fil
       },
     });
 
+    const publicId = await buildPublicFileId({ env, fileName, fileExtension });
+
     if (env.img_url) {
-      await env.img_url.put(`s3:${objectKey}`, "", {
+      await env.img_url.put(publicId, "", {
         metadata: appendCommonMetadata(
           {
             TimeStamp: Date.now(),
@@ -459,7 +464,7 @@ async function uploadToS3(arrayBuffer, fileName, fileExtension, contentType, fil
       });
     }
 
-    return jsonResponse([{ src: `/file/s3:${objectKey}` }]);
+    return jsonResponse([{ src: buildPublicFileSrc(publicId) }]);
   } catch (error) {
     console.error("S3 upload error:", error);
     return jsonResponse({ error: `S3 upload failed: ${error.message}` }, 500);
@@ -474,11 +479,10 @@ async function uploadToDiscordStorage(arrayBuffer, fileName, fileExtension, cont
       return jsonResponse({ error: `Discord upload failed: ${result.error}` }, 500);
     }
 
-    const fileId = randomId("discord");
-    const kvKey = `discord:${fileId}.${fileExtension}`;
+    const publicId = await buildPublicFileId({ env, fileName, fileExtension });
 
     if (env.img_url) {
-      await env.img_url.put(kvKey, "", {
+      await env.img_url.put(publicId, "", {
         metadata: appendCommonMetadata(
           {
             TimeStamp: Date.now(),
@@ -499,7 +503,7 @@ async function uploadToDiscordStorage(arrayBuffer, fileName, fileExtension, cont
       });
     }
 
-    return jsonResponse([{ src: `/file/${kvKey}` }]);
+    return jsonResponse([{ src: buildPublicFileSrc(publicId) }]);
   } catch (error) {
     console.error("Discord upload error:", error);
     return jsonResponse({ error: `Discord upload failed: ${error.message}` }, 500);
@@ -516,10 +520,10 @@ async function uploadToHFStorage(arrayBuffer, fileName, fileExtension, _contentT
       return jsonResponse({ error: `HuggingFace upload failed: ${result.error}` }, 500);
     }
 
-    const kvKey = `hf:${fileId}.${fileExtension}`;
+    const publicId = await buildPublicFileId({ env, fileName, fileExtension });
 
     if (env.img_url) {
-      await env.img_url.put(kvKey, "", {
+      await env.img_url.put(publicId, "", {
         metadata: appendCommonMetadata(
           {
             TimeStamp: Date.now(),
@@ -536,7 +540,7 @@ async function uploadToHFStorage(arrayBuffer, fileName, fileExtension, _contentT
       });
     }
 
-    return jsonResponse([{ src: `/file/${kvKey}` }]);
+    return jsonResponse([{ src: buildPublicFileSrc(publicId) }]);
   } catch (error) {
     console.error("HuggingFace upload error:", error);
     return jsonResponse({ error: `HuggingFace upload failed: ${error.message}` }, 500);
@@ -546,14 +550,14 @@ async function uploadToHFStorage(arrayBuffer, fileName, fileExtension, _contentT
 async function uploadToWebDAVStorage(arrayBuffer, fileName, fileExtension, contentType, fileSize, env, folderPath = "") {
   try {
     const fileId = randomId("wd");
-    const publicId = `${fileId}.${fileExtension}`;
-    const webdavPath = joinStoragePath(folderPath, publicId);
+    const internalId = `${fileId}.${fileExtension}`;
+    const webdavPath = joinStoragePath(folderPath, internalId);
 
     const result = await uploadToWebDAV(arrayBuffer, webdavPath, contentType || "application/octet-stream", env);
 
-    const kvKey = `webdav:${publicId}`;
+    const publicId = await buildPublicFileId({ env, fileName, fileExtension });
     if (env.img_url) {
-      await env.img_url.put(kvKey, "", {
+      await env.img_url.put(publicId, "", {
         metadata: appendCommonMetadata(
           {
             TimeStamp: Date.now(),
@@ -571,7 +575,7 @@ async function uploadToWebDAVStorage(arrayBuffer, fileName, fileExtension, conte
       });
     }
 
-    return jsonResponse([{ src: `/file/${kvKey}` }]);
+    return jsonResponse([{ src: buildPublicFileSrc(publicId) }]);
   } catch (error) {
     console.error("WebDAV upload error:", error);
     return jsonResponse({ error: `WebDAV upload failed: ${error.message}` }, 500);
@@ -581,8 +585,8 @@ async function uploadToWebDAVStorage(arrayBuffer, fileName, fileExtension, conte
 async function uploadToGitHubStorage(arrayBuffer, fileName, fileExtension, contentType, fileSize, env, folderPath = "") {
   try {
     const fileId = randomId("github");
-    const publicId = `${fileId}.${fileExtension}`;
-    const githubStorageKey = joinStoragePath(folderPath, publicId);
+    const internalId = `${fileId}.${fileExtension}`;
+    const githubStorageKey = joinStoragePath(folderPath, internalId);
 
     const result = await uploadToGitHub(
       arrayBuffer,
@@ -592,9 +596,9 @@ async function uploadToGitHubStorage(arrayBuffer, fileName, fileExtension, conte
       env
     );
 
-    const kvKey = `github:${publicId}`;
+    const publicId = await buildPublicFileId({ env, fileName, fileExtension });
     if (env.img_url) {
-      await env.img_url.put(kvKey, "", {
+      await env.img_url.put(publicId, "", {
         metadata: appendCommonMetadata(
           {
             TimeStamp: Date.now(),
@@ -612,7 +616,7 @@ async function uploadToGitHubStorage(arrayBuffer, fileName, fileExtension, conte
       });
     }
 
-    return jsonResponse([{ src: `/file/${kvKey}` }]);
+    return jsonResponse([{ src: buildPublicFileSrc(publicId) }]);
   } catch (error) {
     console.error("GitHub upload error:", error);
     return jsonResponse({ error: `GitHub upload failed: ${error.message}` }, 500);

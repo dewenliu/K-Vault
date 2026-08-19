@@ -10,3 +10,4 @@ docker-node.*.log
 cookies.txt
 test-login.json
 .wrangler-pages-test/
+.workbuddy/

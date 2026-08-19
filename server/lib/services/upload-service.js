@@ -1,4 +1,4 @@
-const { buildPublicFileId, normalizeStorageType } = require('../storage/common');
+const { buildPublicFileId, buildInternalStorageKey, normalizeStorageType } = require('../storage/common');
 const { normalizeFolderPath } = require('../repos/file-repo');
 
 class UploadService {
@@ -30,13 +30,17 @@ class UploadService {
     const storageType = normalizeStorageType(storageConfig.type);
     const normalizedFolderPath = normalizeFolderPath(folderPath);
 
-    const publicId = buildPublicFileId(storageType, fileName, mimeType);
+    const isIdTaken = (candidate) => Boolean(this.fileRepo.getById(candidate));
+    const publicId = await buildPublicFileId({ fileName, mimeType, isTaken: isIdTaken });
+    const internalStorageKey = buildInternalStorageKey({ fileName, mimeType });
 
-    let adapterStorageKey = normalizedFolderPath ? `${normalizedFolderPath}/${publicId}` : publicId;
+    let adapterStorageKey = normalizedFolderPath
+      ? `${normalizedFolderPath}/${internalStorageKey}`
+      : internalStorageKey;
     if (storageType === 'huggingface') {
       adapterStorageKey = normalizedFolderPath
-        ? `uploads/${normalizedFolderPath}/${publicId}`
-        : `uploads/${publicId}`;
+        ? `uploads/${normalizedFolderPath}/${internalStorageKey}`
+        : `uploads/${internalStorageKey}`;
     }
 
     const uploadResult = await adapter.upload({
@@ -49,17 +53,27 @@ class UploadService {
 
     const storageKey = uploadResult.storageKey || adapterStorageKey;
 
-    const fileRecord = this.fileRepo.create({
-      id: publicId,
-      storageConfigId: storageConfig.id,
-      storageType,
-      storageKey,
-      fileName,
-      fileSize,
-      mimeType,
-      folderPath: normalizedFolderPath,
-      extra: uploadResult.metadata || {},
-    });
+    let fileRecord;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        fileRecord = this.fileRepo.create({
+          id: publicId,
+          storageConfigId: storageConfig.id,
+          storageType,
+          storageKey,
+          fileName,
+          fileSize,
+          mimeType,
+          folderPath: normalizedFolderPath,
+          extra: uploadResult.metadata || {},
+        });
+        break;
+      } catch (error) {
+        // 极小概率并发同名冲突：公开 ID 已占用则换名重试（存储 key 与公开 ID 解耦，无需重传字节）
+        if (attempt >= 2 || !isUniqueConstraintError(error)) throw error;
+        publicId = await buildPublicFileId({ fileName, mimeType, isTaken: isIdTaken });
+      }
+    }
 
     return {
       file: fileRecord,
@@ -177,6 +191,11 @@ class UploadService {
     this.fileRepo.delete(fileId);
     return { deleted: true };
   }
+}
+
+function isUniqueConstraintError(error) {
+  const text = String((error && (error.message || error.code)) || '').toLowerCase();
+  return text.includes('unique constraint') || text.includes('sqlite_constraint') || text.includes('primary key');
 }
 
 module.exports = {

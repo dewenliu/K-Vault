@@ -602,7 +602,7 @@ curl "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getWebhookInfo"
 | `TG_UPLOAD_NOTIFY` | 网页上传成功后发送“直链+File ID”通知消息 | `true` |
 | `FILE_URL_SECRET` | 签名直链密钥（也兼容 `TG_FILE_URL_SECRET`） | `TG_Bot_Token` |
 | `CHUNK_BACKEND` | 分片临时存储后端（`auto`/`r2`/`kv`） | `auto` |
-| `disable_telemetry` | 禁用遥测 | - |
+| `enable_telemetry` | 启用遥测（默认**关闭**，仅设为 `true` 才开启；默认不上报任何请求数据） | `false`（关闭） |
 
 ### Docker 运行时变量（自托管模式）
 
@@ -716,7 +716,7 @@ curl "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getWebhookInfo"
 | `GUEST_DAILY_LIMIT` | 访客每日上传次数 | 可选 |
 | `ModerateContentApiKey` | 图片审核 API Key | 可选 |
 | `WhiteList_Mode` | 白名单模式 | 可选 |
-| `disable_telemetry` | 禁用遥测 | 可选 |
+| `enable_telemetry` | 启用遥测（默认**关闭**，仅设为 `true` 才开启） | 可选（默认关闭） |
 | `PORT` | 单镜像容器内部 API 端口，保持 `8787` | 可选 |
 | `DATA_DIR` | Docker 自托管模式数据目录 | 可选 |
 | `DB_PATH` | Docker 自托管模式 SQLite 路径 | 可选 |

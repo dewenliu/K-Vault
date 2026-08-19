@@ -3,7 +3,8 @@
  * 将文件直接存储到 Cloudflare R2
  */
 
-import { createStorageManager, generateKey, getFileType } from '../../utils/storage.js';
+import { getFileType } from '../../utils/storage.js';
+import { buildPublicFileId, buildPublicFileSrc } from '../../utils/public-id.js';
 
 export async function onRequestPost(context) {
   const { request, env } = context;
@@ -31,17 +32,18 @@ export async function onRequestPost(context) {
       });
     }
     
-    // 生成文件 ID
+    // 生成内部 R2 对象 key（随机，避免与原文件名同名覆盖；不会出现在分享链接中）
     const timestamp = Date.now();
     const randomStr = Math.random().toString(36).substring(2, 10);
     const ext = file.name.split('.').pop() || '';
-    const fileId = `${timestamp}_${randomStr}${ext ? '.' + ext : ''}`;
-    
+    const fileExtension = ext.toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin';
+    const objectKey = `r2_${timestamp}_${randomStr}${ext ? '.' + fileExtension : ''}`;
+
     // 获取文件内容
     const content = await file.arrayBuffer();
-    
+
     // 存储到 R2
-    await env.R2_BUCKET.put(fileId, content, {
+    await env.R2_BUCKET.put(objectKey, content, {
       httpMetadata: {
         contentType: file.type || 'application/octet-stream'
       },
@@ -52,24 +54,27 @@ export async function onRequestPost(context) {
         fileType: getFileType(file.name)
       }
     });
-    
+
+    // 中性公开 ID（= 原文件名.后缀），不暴露任何存储后端信息
+    const publicId = await buildPublicFileId({ env, fileName: file.name, fileExtension });
+
     // 同时在 KV 中存储元数据（用于管理和列表）
     if (env.img_url) {
-      const key = generateKey(fileId, file.name);
-      await env.img_url.put(key, '', {
+      await env.img_url.put(publicId, '', {
         metadata: {
           fileName: file.name,
           fileSize: file.size,
           TimeStamp: timestamp,
-          storage: 'r2',
+          storageType: 'r2',
+          r2Key: objectKey,
           contentType: file.type || 'application/octet-stream'
         }
       });
     }
-    
+
     // 返回成功响应
     return new Response(JSON.stringify([{
-      src: `/file/${fileId}`,
+      src: buildPublicFileSrc(publicId),
       storage: 'r2'
     }]), {
       headers: { 'Content-Type': 'application/json' }
@@ -104,7 +109,26 @@ export async function onRequestGet(context) {
   }
   
   try {
-    const object = await env.R2_BUCKET.get(fileId);
+    // 优先通过 KV 元数据解析 R2 对象 key（新 schema），兼容直接传内部 key（旧 schema）
+    let r2Key = fileId;
+    if (env.img_url) {
+      const prefixes = ['r2:', 'img:', 'vid:', 'aud:', 'doc:', 's3:', 'discord:', 'hf:', 'webdav:', 'github:', ''];
+      const hasKnownPrefix = prefixes.some((prefix) => prefix && fileId.startsWith(prefix));
+      const candidateKeys = hasKnownPrefix ? [fileId] : prefixes.map((prefix) => `${prefix}${fileId}`);
+      for (const key of candidateKeys) {
+        const record = await env.img_url.getWithMetadata(key);
+        if (record?.metadata) {
+          if (record.metadata.r2Key) {
+            r2Key = record.metadata.r2Key;
+          } else if (String(record.metadata.storageType || record.metadata.storage || '').toLowerCase() === 'r2') {
+            r2Key = fileId;
+          }
+          break;
+        }
+      }
+    }
+
+    const object = await env.R2_BUCKET.get(r2Key);
     
     if (!object) {
       return new Response('File not found', { status: 404 });
